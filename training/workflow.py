@@ -18,6 +18,7 @@ from typing import Final, List
 fileHashesTrain: Final[str] = "hashes_train.txt"
 # imageName: Final[str] = "filipmasar/eth-lisbon:latest"
 imageName: Final[str] = "filipmasar/eth-lisbon:ml7"
+NTRY_MAX: Final[int] = 5
 
 
 def checkStatusOfJob(job_id: str) -> str:
@@ -57,8 +58,8 @@ def submitJob(cid: str) -> str:
             "python",
             "main.py",
             "--train",
-            "--input='/inputs'",
-            "--output='/outputs'",
+            "--input=/inputs",
+            "--output=/outputs",
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -78,7 +79,8 @@ def getResultsFromJob(job_id: str) -> str:
     assert len(job_id) > 0
     temp_dir = tempfile.mkdtemp()
     print("getting results for job: %s" % job_id)
-    for i in range(0, 5):  # try 5 times
+    # try max NTRY_MAX times
+    for i in range(0, NTRY_MAX):
         p = subprocess.run(
             [
                 "bacalhau",
@@ -142,9 +144,7 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         results = pool.map(getResultsFromJob, job_ids)
         print("finished saving results")
 
-        # TODO: later
         # Do something with the results
-
         # shutil.rmtree("results", ignore_errors=True)
         # os.makedirs("results", exist_ok=True)
         # for r in results:

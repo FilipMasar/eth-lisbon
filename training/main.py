@@ -1,7 +1,11 @@
-import pandas as pd
-import glob, sys, subprocess, os
-
 import argparse
+import glob
+import os
+import subprocess
+import sys
+
+import pandas as pd
+
 
 def local_training(input_dir, output_dir):
     print("Loading Dataset")
@@ -69,4 +73,3 @@ if __name__ == "__main__":
     else:
         print("Must pass either --train or --aggregate")
         sys.exit()
-
