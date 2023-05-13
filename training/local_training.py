@@ -1,32 +1,27 @@
-import csv, subprocess
+import pandas as pd
+import glob, os, sys
 
-dataset = '/part1.csv'
 
-# list files in current directory
-subprocess.run(["ls", "-al"])
+def main(input_dir, output_dir):
+    data = glob.glob(f"{input_dir}/*csv")[0]
 
-# Open the CSV file
-with open(dataset, newline='') as csvfile:
-    # Create a CSV reader object
-    reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+    print("Loading Dataset")
+    df = pd.read_csv(data, header=None)
 
-    # Initialize an empty list to store the data
-    data = []
+    avg = df.iloc[: , -1].mean()
+    len = df.shape[0]
 
-    # Iterate over the rows in the CSV file
-    for row in reader:
-        # Append the row to the data list
-        data.append(row)
-    
-# compute average of last column
-last_column = [float(row[-1]) for row in data]
-average = sum(last_column) / len(data)
+    print(avg)
+    print(len)
 
-print("Average: " + str(average))
-print("Number of rows: " + str(len(data)))
+    print("Saving Model")
+    with open(f'{output_dir}/model.txt', 'w') as f:
+        f.write(str(avg) + '\n')
+        f.write(str(len) + '\n')
 
-# write to file average and number of rows
-with open('model.txt', 'w') as f:
-    f.write(str(average) + '\n')
-    f.write(str(len(data)) + '\n')
 
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Must pass arguments. Format: [command] input_dir output_dir")
+        sys.exit()
+    main(sys.argv[1], sys.argv[2])
