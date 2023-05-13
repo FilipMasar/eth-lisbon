@@ -1,5 +1,12 @@
 import json
+import multiprocessing
+import os
+import shutil
 import subprocess
+import time
+from typing import Final, List
+
+fileHashesTrain: Final[str] = "hashes_train"
 
 
 def checkStatusOfJob(job_id: str) -> str:
@@ -33,9 +40,15 @@ def submitJob(cid: str) -> str:
             "--id-only",
             "--wait=false",
             "--input",
-            "ipfs://" + cid + ":/inputs/data.tar.gz",
+            "ipfs://" + cid + ":/inputs/",
             "https://hub.docker.com/r/filipmasar/eth-lisbon:latest",
             # "https://hub.docker.com/r/filipmasar/eth-lisbon:ml7",
+            "--",
+            "python",
+            "main.py",
+            "--train",
+            "--input='/inputs'",
+            "--output='/outputs'",
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -84,3 +97,45 @@ def parseJobStatus(result: str) -> str:
     if len(r) > 0:
         return r[0]["State"]["State"]
     return ""
+
+
+def parseHashes(filename: str) -> list:
+    """Split lines from a text file into a list."""
+    assert os.path.exists(filename)
+    with open(filename, "r") as f:
+        hashes = f.read().splitlines()
+    return hashes
+
+
+def main(file: str = fileHashesTrain, num_files: int = -1):
+    # Use multiprocessing to work in parallel
+    count = multiprocessing.cpu_count()
+    with multiprocessing.Pool(processes=count) as pool:
+        hashes = parseHashes(file)[:num_files]
+        print("submitting %d jobs" % len(hashes))
+        job_ids = pool.map(submitJob, hashes)
+        assert len(job_ids) == len(hashes)
+
+        print("waiting for jobs to complete...")
+        while True:
+            job_statuses = pool.map(checkStatusOfJob, job_ids)
+            total_finished = sum(map(lambda x: x == "Completed", job_statuses))
+            if total_finished >= len(job_ids):
+                break
+            print("%d/%d jobs completed" % (total_finished, len(job_ids)))
+            time.sleep(2)
+
+        print("all jobs completed, saving results...")
+        results = pool.map(getResultsFromJob, job_ids)
+        print("finished saving results")
+
+        # Do something with the results
+        # LATER
+        # shutil.rmtree("results", ignore_errors=True)
+        # os.makedirs("results", exist_ok=True)
+        # for r in results:
+        #     path = os.path.join(r, "outputs", "*.csv")
+        #     csv_file = glob.glob(path)
+        #     for f in csv_file:
+        #         print("moving %s to results" % f)
+        #         shutil.move(f, "results")
