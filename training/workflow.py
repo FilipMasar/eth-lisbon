@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import time
 from pprint import pprint
-from typing import Final, List
+from typing import Final, List, Optional, Tuple
 
 fileHashesTrain: Final[str] = "hashes_train.txt"
 # imageName: Final[str] = "filipmasar/eth-lisbon:latest"
@@ -21,7 +21,7 @@ imageName: Final[str] = "filipmasar/eth-lisbon:ml7"
 NTRY_MAX: Final[int] = 5
 
 
-def checkStatusOfJob(job_id: str) -> str:
+def checkStatusOfJob(job_id: str) -> Tuple[str, Optional[str]]:
     """Check the status of a Bacalhau job."""
     assert len(job_id) > 0
     p = subprocess.run(
@@ -30,7 +30,8 @@ def checkStatusOfJob(job_id: str) -> str:
         stderr=subprocess.PIPE,
         text=True,
     )
-    r = parseJobStatus(p.stdout)
+    r, optional_cid = parseJobStatus(p.stdout)
+
     if r == "":
         print("job status is empty! %s" % job_id)
     elif r == "Completed":
@@ -38,11 +39,11 @@ def checkStatusOfJob(job_id: str) -> str:
     else:
         print("job not completed: %s - %s" % (job_id, r))
 
-    return r
+    return r, optional_cid
 
 
-def submitJob(cid: str) -> str:
-    """Submit a job to the Bacalhau network."""
+def submitTrainingJob(cid: str) -> str:
+    """Submit a training job to the Bacalhau network."""
     assert len(cid) > 0
     p = subprocess.run(
         [
@@ -58,6 +59,39 @@ def submitJob(cid: str) -> str:
             "python",
             "main.py",
             "--train",
+            "--input=/inputs",
+            "--output=/outputs",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if p.returncode != 0:
+        print("failed (%d) job: %s" % (p.returncode, p.stdout))
+
+    job_id = p.stdout.strip()
+    print("job submitted: %s" % job_id)
+
+    return job_id
+
+
+def submitAggregationJob(cid: str) -> str:
+    """Submit an aggregation job to the Bacalhau network."""
+    assert len(cid) > 0
+    p = subprocess.run(
+        [
+            "bacalhau",
+            "docker",
+            "run",
+            "--id-only",
+            "--wait=false",
+            "--input",
+            "ipfs://" + cid + ":/inputs/",
+            imageName,
+            "--",
+            "python",
+            "main.py",
+            "--aggregate",
             "--input=/inputs",
             "--output=/outputs",
         ],
@@ -101,17 +135,31 @@ def getResultsFromJob(job_id: str) -> str:
     return temp_dir
 
 
-def parseJobStatus(result: str) -> str:
+def getOutputCidForJob(job_id: str) -> str:
+    raise NotImplementedError
+
+
+def parseJobStatus(result: str) -> Tuple[str, Optional[str]]:
     """Parse the status of a Bacalhau job."""
+    output_cid: Optional[str] = None
     if len(result) == 0:
-        return ""
+        return "", output_cid
     r = json.loads(result)
     if len(r) > 0:
         # print("r[0]: " + json.dumps(r[0]))
         # uncomment to see full error spec
         # pprint(r[0])
-        return r[0]["State"]["State"]
-    return ""
+        state: str = r[0]["State"]["State"]
+
+        if state == "Completed":
+            # print("published results: ")
+            # pprint(r[0]["State"])
+            res = [execRes for execRes in r[0]["State"]["Executions"] if len(execRes["PublishedResults"]) > 0]
+            output_cid = res[0]["PublishedResults"]["CID"]
+
+        return state, output_cid
+
+    return "", output_cid
 
 
 def parseHashes(filename: str) -> list:
@@ -128,21 +176,22 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
     with multiprocessing.Pool(processes=count) as pool:
         hashes = parseHashes(file)[:num_files]
         print("submitting %d jobs" % len(hashes))
-        job_ids = pool.map(submitJob, hashes)
+        job_ids = pool.map(submitTrainingJob, hashes)
         assert len(job_ids) == len(hashes)
 
-        print("waiting for jobs to complete...")
+        print("waiting for training jobs to complete...")
         while True:
-            job_statuses = pool.map(checkStatusOfJob, job_ids)
-            total_finished = sum(map(lambda x: x == "Completed", job_statuses))
+            training_job_statuses = pool.map(checkStatusOfJob, job_ids)
+            total_finished = sum(map(lambda x: x[0] == "Completed", training_job_statuses))
             if total_finished >= len(job_ids):
                 break
             print("%d/%d jobs completed" % (total_finished, len(job_ids)))
             time.sleep(2)
 
-        print("all jobs completed, saving results...")
+        print("all training jobs completed, saving results...")
         results = pool.map(getResultsFromJob, job_ids)
-        print("finished saving results")
+        # print(results)
+        print("finished saving results / training")
 
         # Do something with the results
         # shutil.rmtree("results", ignore_errors=True)
@@ -154,6 +203,28 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         #         print("moving %s to results" % f)
         #         shutil.move(f, "results")
 
+        # run the aggregation
+        print("----------------------------------")
+        print("running aggregation")
+        print("----------------------------------")
+        print("job_statuses: ")
+        print(training_job_statuses)
+        output_train_hashes: List[str] = [r[0] for r in training_job_statuses]
+        aggregate_job_ids = pool.map(submitAggregationJob, output_train_hashes)
+
+        assert len(aggregate_job_ids) == len(output_train_hashes)
+
+        print("waiting for aggregation jobs to complete...")
+        while True:
+            aggregation_job_statuses = pool.map(checkStatusOfJob, aggregate_job_ids)
+            total_finished = sum(map(lambda x: x[0] == "Completed", aggregation_job_statuses))
+            if total_finished >= len(aggregate_job_ids):
+                break
+            print("%d/%d aggregation jobs completed" % (total_finished, len(aggregate_job_ids)))
+            time.sleep(2)
+
+        print("all aggregation jobs completed, saving results...")
+        results = pool.map(getResultsFromJob, aggregate_job_ids)
 
 if __name__ == "__main__":
     main("hashes_train.txt", 2)
