@@ -12,11 +12,12 @@ import shutil
 import subprocess
 import tempfile
 import time
+from pprint import pprint
 from typing import Final, List
 
 fileHashesTrain: Final[str] = "hashes_train.txt"
-imageName: Final[str] = "https://hub.docker.com/r/filipmasar/eth-lisbon:latest"
-# imageName: Final[str] = "https://hub.docker.com/r/filipmasar/eth-lisbon:ml7"
+# imageName: Final[str] = "filipmasar/eth-lisbon:latest"
+imageName: Final[str] = "filipmasar/eth-lisbon:ml7"
 
 
 def checkStatusOfJob(job_id: str) -> str:
@@ -104,6 +105,9 @@ def parseJobStatus(result: str) -> str:
         return ""
     r = json.loads(result)
     if len(r) > 0:
+        # print("r[0]: " + json.dumps(r[0]))
+        # uncomment to see full error spec
+        # pprint(r[0])
         return r[0]["State"]["State"]
     return ""
 
