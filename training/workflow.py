@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+from enum import Enum
+from functools import partial
 from pprint import pprint
 from typing import Final, List, Optional, Tuple
 
@@ -19,6 +21,11 @@ fileHashesTrain: Final[str] = "hashes_train.txt"
 # imageName: Final[str] = "filipmasar/eth-lisbon:latest"
 imageName: Final[str] = "filipmasar/eth-lisbon:ml7"
 NTRY_MAX: Final[int] = 5
+
+
+class JobType(Enum):
+    train = 1
+    aggregate = 2
 
 
 def checkStatusOfJob(job_id: str) -> Tuple[str, Optional[str]]:
@@ -42,8 +49,8 @@ def checkStatusOfJob(job_id: str) -> Tuple[str, Optional[str]]:
     return r, optional_cid
 
 
-def submitTrainingJob(cid: str) -> str:
-    """Submit a training job to the Bacalhau network."""
+def submitJob(jobType: JobType, cid: str) -> str:
+    """Submit a job to the Bacalhau network."""
     assert len(cid) > 0
     p = subprocess.run(
         [
@@ -58,7 +65,7 @@ def submitTrainingJob(cid: str) -> str:
             "--",
             "python",
             "main.py",
-            "--train",
+            f"--{jobType.name}",
             "--input=/inputs",
             "--output=/outputs",
         ],
@@ -70,40 +77,7 @@ def submitTrainingJob(cid: str) -> str:
         print("failed (%d) job: %s" % (p.returncode, p.stdout))
 
     job_id = p.stdout.strip()
-    print("job submitted: %s" % job_id)
-
-    return job_id
-
-
-def submitAggregationJob(cid: str) -> str:
-    """Submit an aggregation job to the Bacalhau network."""
-    assert len(cid) > 0
-    p = subprocess.run(
-        [
-            "bacalhau",
-            "docker",
-            "run",
-            "--id-only",
-            "--wait=false",
-            "--input",
-            "ipfs://" + cid + ":/inputs/",
-            imageName,
-            "--",
-            "python",
-            "main.py",
-            "--aggregate",
-            "--input=/inputs",
-            "--output=/outputs",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    if p.returncode != 0:
-        print("failed (%d) job: %s" % (p.returncode, p.stdout))
-
-    job_id = p.stdout.strip()
-    print("job submitted: %s" % job_id)
+    print("%s job submitted: %s" % (jobType, job_id))
 
     return job_id
 
@@ -154,7 +128,11 @@ def parseJobStatus(result: str) -> Tuple[str, Optional[str]]:
         if state == "Completed":
             # print("published results: ")
             # pprint(r[0]["State"])
-            res = [execRes for execRes in r[0]["State"]["Executions"] if len(execRes["PublishedResults"]) > 0]
+            res = [
+                execRes
+                for execRes in r[0]["State"]["Executions"]
+                if len(execRes["PublishedResults"]) > 0
+            ]
             output_cid = res[0]["PublishedResults"]["CID"]
 
         return state, output_cid
@@ -176,13 +154,16 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
     with multiprocessing.Pool(processes=count) as pool:
         hashes = parseHashes(file)[:num_files]
         print("submitting %d jobs" % len(hashes))
+        submitTrainingJob = partial(submitJob, JobType.train)
         job_ids = pool.map(submitTrainingJob, hashes)
         assert len(job_ids) == len(hashes)
 
         print("waiting for training jobs to complete...")
         while True:
             training_job_statuses = pool.map(checkStatusOfJob, job_ids)
-            total_finished = sum(map(lambda x: x[0] == "Completed", training_job_statuses))
+            total_finished = sum(
+                map(lambda x: x[0] == "Completed", training_job_statuses)
+            )
             if total_finished >= len(job_ids):
                 break
             print("%d/%d jobs completed" % (total_finished, len(job_ids)))
@@ -210,6 +191,7 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         print("job_statuses: ")
         print(training_job_statuses)
         output_train_hashes: List[str] = [r[0] for r in training_job_statuses]
+        submitAggregationJob = partial(submitJob, JobType.aggregate)
         aggregate_job_ids = pool.map(submitAggregationJob, output_train_hashes)
 
         assert len(aggregate_job_ids) == len(output_train_hashes)
@@ -217,14 +199,20 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         print("waiting for aggregation jobs to complete...")
         while True:
             aggregation_job_statuses = pool.map(checkStatusOfJob, aggregate_job_ids)
-            total_finished = sum(map(lambda x: x[0] == "Completed", aggregation_job_statuses))
+            total_finished = sum(
+                map(lambda x: x[0] == "Completed", aggregation_job_statuses)
+            )
             if total_finished >= len(aggregate_job_ids):
                 break
-            print("%d/%d aggregation jobs completed" % (total_finished, len(aggregate_job_ids)))
+            print(
+                "%d/%d aggregation jobs completed"
+                % (total_finished, len(aggregate_job_ids))
+            )
             time.sleep(2)
 
         print("all aggregation jobs completed, saving results...")
         results = pool.map(getResultsFromJob, aggregate_job_ids)
+
 
 if __name__ == "__main__":
     main("hashes_train.txt", 2)
