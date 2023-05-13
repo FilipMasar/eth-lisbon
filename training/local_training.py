@@ -1,6 +1,6 @@
 import csv
 
-dataset = '../part1.csv'
+dataset = '/part1.csv'
 
 # Open the CSV file
 with open(dataset, newline='') as csvfile:
