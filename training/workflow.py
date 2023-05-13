@@ -1,12 +1,22 @@
+"""workflow.py.
+
+run similar bacalau jobs for a list of input hashes (representing vertically split input datasets on IPFS),
+check the status of the jobs in parallel,
+if the results are all succesful, start the aggregation
+"""
+import glob
 import json
 import multiprocessing
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from typing import Final, List
 
-fileHashesTrain: Final[str] = "hashes_train"
+fileHashesTrain: Final[str] = "hashes_train.txt"
+imageName: Final[str] = "https://hub.docker.com/r/filipmasar/eth-lisbon:latest"
+# imageName: Final[str] = "https://hub.docker.com/r/filipmasar/eth-lisbon:ml7"
 
 
 def checkStatusOfJob(job_id: str) -> str:
@@ -41,8 +51,7 @@ def submitJob(cid: str) -> str:
             "--wait=false",
             "--input",
             "ipfs://" + cid + ":/inputs/",
-            "https://hub.docker.com/r/filipmasar/eth-lisbon:latest",
-            # "https://hub.docker.com/r/filipmasar/eth-lisbon:ml7",
+            imageName,
             "--",
             "python",
             "main.py",
@@ -129,8 +138,9 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         results = pool.map(getResultsFromJob, job_ids)
         print("finished saving results")
 
+        # TODO: later
         # Do something with the results
-        # LATER
+
         # shutil.rmtree("results", ignore_errors=True)
         # os.makedirs("results", exist_ok=True)
         # for r in results:
@@ -139,3 +149,7 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         #     for f in csv_file:
         #         print("moving %s to results" % f)
         #         shutil.move(f, "results")
+
+
+if __name__ == "__main__":
+    main("hashes_train.txt", 2)
