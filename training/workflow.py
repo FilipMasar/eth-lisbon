@@ -177,23 +177,14 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         # print(results)
         print("finished saving results / training")
 
-        # Do something with the results
-        # shutil.rmtree("results", ignore_errors=True)
-        # os.makedirs("results", exist_ok=True)
-        # for r in results:
-        #     path = os.path.join(r, "outputs", "*.csv")
-        #     csv_file = glob.glob(path)
-        #     for f in csv_file:
-        #         print("moving %s to results" % f)
-        #         shutil.move(f, "results")
+        print(f"{training_job_statuses=}")
 
         # run the aggregation
         print("----------------------------------")
         print("running aggregation")
         print("----------------------------------")
-        print("job_statuses: ")
-        print(training_job_statuses)
-        output_train_hashes: List[str] = [r[0] for r in training_job_statuses]
+        output_train_hashes: List[str] = [r[-1] for r in training_job_statuses]
+        print("output_train_hashes: ", output_train_hashes)
         submitAggregationJob = partial(submitJob, JobType.aggregate)
         aggregate_job_ids = pool.map(submitAggregationJob, output_train_hashes)
 
