@@ -2,16 +2,16 @@
 
 ## Quickstart
 
-### Prerequisites
+#### Prerequisites
 - Python 3.9
 - [bacalhau cli](https://docs.bacalhau.org/getting-started/installation)
 
-### Start the training
+#### Start the training
 ```bash
 python3 workflow.py
 ```
 
-### Datasets
+#### Datasets
 Datasets for demontration are stored in `datasets` directory. They were published using [web3.storage](https://web3.storage/):
 - bafybeiamyacldmsqo2plk4quzxmckqpcpckttt2asbj67jcssdlszlfr3a
 - bafybeid3i7g5nqetotoj45xh32qjx2lrispstgjplbtcuedwhlvpzsly7i
