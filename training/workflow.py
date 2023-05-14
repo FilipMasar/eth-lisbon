@@ -19,7 +19,7 @@ from typing import Final, List, Optional, Tuple
 
 fileHashesTrain: Final[str] = "hashes_train.txt"
 # imageName: Final[str] = "filipmasar/eth-lisbon:latest"
-imageName: Final[str] = "filipmasar/eth-lisbon:ml7"
+imageName: Final[str] = "filipmasar/eth-lisbon:ml9"
 NTRY_MAX: Final[int] = 5
 
 
