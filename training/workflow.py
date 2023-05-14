@@ -52,35 +52,58 @@ def checkStatusOfJob(job_id: str) -> Tuple[str, Optional[str]]:
     return r, optional_cid
 
 
-def submitJob(jobType: JobType, cid: str) -> str:
+def submitJob(jobType: JobType, input_cids: List[str]) -> str:
     """Submit a job to the Bacalhau network."""
-    assert len(cid) > 0
+    # ugly
+    if isinstance(input_cids, str):
+        input_cids = [input_cids]
+
+    assert isinstance(
+        input_cids, list
+    ), f"should be passing list of cids. {type(input_cids)=}"
+
+    for cid in input_cids:
+        assert len(cid) > 0
+
+    base_command: List[str] = [
+        "bacalhau",
+        "docker",
+        "run",
+        "--id-only",
+        "--wait=false",
+    ]
+
+    # we use subdir with aggregate jobs, not with training jobs?
+    withSubDir: bool = len(input_cids) > 1
+    for count, cid in enumerate(input_cids, start=1):
+        inputsMount: str = f":/inputs/{count}" if withSubDir else ":/inputs"
+        print(f"{inputsMount=}")
+        base_command += ["--input", "ipfs://" + cid + inputsMount]
+
+    command: List[str] = base_command + [
+        imageName,
+        "--",
+        "python",
+        "main.py",
+        f"--{jobType.name}",
+        "--input=/inputs",
+        "--output=/outputs",
+    ]
+
+    print("running command: ")
+    print(command)
+
     p = subprocess.run(
-        [
-            "bacalhau",
-            "docker",
-            "run",
-            "--id-only",
-            "--wait=false",
-            "--input",
-            "ipfs://" + cid + ":/inputs/",
-            imageName,
-            "--",
-            "python",
-            "main.py",
-            f"--{jobType.name}",
-            "--input=/inputs",
-            "--output=/outputs",
-        ],
+        command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
     if p.returncode != 0:
-        print("failed (%d) job: %s" % (p.returncode, p.stdout))
+        print("failed %s (%d) job: %s" % (jobType.name, p.returncode, p.stdout))
 
     job_id = p.stdout.strip()
-    print("%s job submitted: %s" % (jobType, job_id))
+    print("%s job submitted: %s" % (jobType.name, job_id))
 
     return job_id
 
@@ -186,26 +209,21 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         output_train_hashes: List[str] = [r[-1] for r in training_job_statuses]
         print("output_train_hashes: ", output_train_hashes)
         submitAggregationJob = partial(submitJob, JobType.aggregate)
-        aggregate_job_ids = pool.map(submitAggregationJob, output_train_hashes)
+        aggregation_job_id = submitAggregationJob(output_train_hashes)
 
-        assert len(aggregate_job_ids) == len(output_train_hashes)
-
-        print("waiting for aggregation jobs to complete...")
+        print("waiting for aggregation job to complete...")
         while True:
-            aggregation_job_statuses = pool.map(checkStatusOfJob, aggregate_job_ids)
-            total_finished = sum(
-                map(lambda x: x[0] == "Completed", aggregation_job_statuses)
+            aggregation_job_status: Tuple[str, Optional[str]] = checkStatusOfJob(
+                aggregation_job_id
             )
-            if total_finished >= len(aggregate_job_ids):
+            if aggregation_job_status[0] == "Completed":
                 break
-            print(
-                "%d/%d aggregation jobs completed"
-                % (total_finished, len(aggregate_job_ids))
-            )
+
+            print("aggregation job completed")
             time.sleep(2)
 
-        print("all aggregation jobs completed, saving results...")
-        results = pool.map(getResultsFromJob, aggregate_job_ids)
+        print("aggregation job completed, saving results...")
+        # results = pool.map(getResultsFromJob, aggregate_job_ids)
 
 
 if __name__ == "__main__":
