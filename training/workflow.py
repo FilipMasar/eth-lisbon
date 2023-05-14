@@ -4,11 +4,9 @@ run similar bacalau jobs for a list of input hashes (representing vertically spl
 check the status of the jobs in parallel,
 if the results are all succesful, start the aggregation
 """
-import glob
 import json
 import multiprocessing
 import os
-import shutil
 import subprocess
 import tempfile
 import time
@@ -18,7 +16,6 @@ from pprint import pprint
 from typing import Final, List, Optional, Tuple
 
 fileHashesTrain: Final[str] = "hashes_train.txt"
-# imageName: Final[str] = "filipmasar/eth-lisbon:latest"
 imageName: Final[str] = "filipmasar/eth-lisbon:ml9"
 NTRY_MAX: Final[int] = 5
 
@@ -77,7 +74,6 @@ def submitJob(jobType: JobType, input_cids: List[str]) -> str:
     withSubDir: bool = len(input_cids) > 1
     for count, cid in enumerate(input_cids, start=1):
         inputsMount: str = f":/inputs/{count}" if withSubDir else ":/inputs"
-        print(f"{inputsMount=}")
         base_command += ["--input", "ipfs://" + cid + inputsMount]
 
     command: List[str] = base_command + [
@@ -89,9 +85,6 @@ def submitJob(jobType: JobType, input_cids: List[str]) -> str:
         "--input=/inputs",
         "--output=/outputs",
     ]
-
-    print("running command: ")
-    print(command)
 
     p = subprocess.run(
         command,
@@ -178,11 +171,14 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
     # Use multiprocessing to work in parallel
     count = multiprocessing.cpu_count()
     with multiprocessing.Pool(processes=count) as pool:
-        hashes = parseHashes(file)[:num_files]
-        print("submitting %d jobs" % len(hashes))
+        cids = parseHashes(file)[:num_files]
+        print("----------------------------------")
+        print("running local training on %d files" % len(cids))
+        print("----------------------------------")
+       
         submitTrainingJob = partial(submitJob, JobType.train)
-        job_ids = pool.map(submitTrainingJob, hashes)
-        assert len(job_ids) == len(hashes)
+        job_ids = pool.map(submitTrainingJob, cids)
+        assert len(job_ids) == len(cids)
 
         print("waiting for training jobs to complete...")
         while True:
@@ -207,7 +203,7 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
         print("running aggregation")
         print("----------------------------------")
         output_train_hashes: List[str] = [r[-1] for r in training_job_statuses]
-        print("output_train_hashes: ", output_train_hashes)
+        print("local training results: ", output_train_hashes)
         submitAggregationJob = partial(submitJob, JobType.aggregate)
         aggregation_job_id = submitAggregationJob(output_train_hashes)
 
@@ -223,7 +219,7 @@ def main(file: str = fileHashesTrain, num_files: int = -1):
             time.sleep(2)
 
         print("aggregation job completed, saving results...")
-        # results = pool.map(getResultsFromJob, aggregate_job_ids)
+        subprocess.run(["bacalhau", "get", aggregation_job_id])
 
 
 if __name__ == "__main__":
