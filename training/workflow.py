@@ -43,6 +43,9 @@ def checkStatusOfJob(job_id: str) -> Tuple[str, Optional[str]]:
         print("job status is empty! %s" % job_id)
     elif r == "Completed":
         print("job completed: %s" % job_id)
+    elif r == "Error":
+        print("job returns error: %s" % job_id)
+        pprint(json.loads(p.stdout))
     else:
         print("job not completed: %s - %s" % (job_id, r))
 
@@ -114,7 +117,7 @@ def getOutputCidForJob(job_id: str) -> str:
 
 
 def parseJobStatus(result: str) -> Tuple[str, Optional[str]]:
-    """Parse the status of a Bacalhau job."""
+    """Parse the status and CID of a Bacalhau job."""
     output_cid: Optional[str] = None
     if len(result) == 0:
         return "", output_cid
